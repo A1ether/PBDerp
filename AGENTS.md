@@ -64,8 +64,11 @@ If `pnpm` is intercepted by a broken mise shim, use the local binaries:
 
 ## Data model rules
 
-- Sales: `DRAFT` (no stock effect) → `CONFIRMED` (reserve) → `SHIPPED` (deduct) → `COMPLETED`.
-- Purchase: `DRAFT` → `APPROVED` → `ORDERED` → `RECEIVED` (increase stock).
+- Sales: `DRAFT` (no stock effect) → `CONFIRMED` (reserve) → `PARTIALLY_SHIPPED` / `SHIPPED` (deduct) → `COMPLETED`.
+- Purchase: `DRAFT` → `APPROVED` → `ORDERED` → `PARTIALLY_RECEIVED` / `RECEIVED` (increase stock).
+- Partial shipments/receipts operate on `qty_<lineId>` form fields and validate against the remaining quantity.
+- Sales returns: `DRAFT` → `RECEIVED`; receiving increases stock, increments `SalesOrderLine.returnedQuantity`, and creates an OUT payment for the refund.
+- Stock takes snapshot stock levels; completing writes `ADJUSTMENT` movements and sets physical quantity to the counted value.
 - Reservations are rows in `StockReservation`; confirm creates `ACTIVE`, ship sets `CONSUMED`, cancel sets `RELEASED`.
 - `StockMovement.quantity` is signed: positive in, negative out. `balanceAfter` is the physical quantity after the movement.
 - Lock order is deterministic: lock the document row first, then stock levels (transfer locks stock levels in key order).
@@ -83,8 +86,8 @@ If `pnpm` is intercepted by a broken mise shim, use the local binaries:
 ## Known limitations (intentional for MVP)
 
 - Single organization per deployment (tenant fields are present, org switching is not built).
-- Sales/purchase receive/ship are full-document operations; partial receipts/shipments are P4.
-- Inventory list low-stock filter fetches a bounded window (2,000 rows) and filters in memory; optimize with SQL in P4.
+- Inventory list low-stock filter fetches a bounded window (2,000 rows) and filters in memory; optimize with SQL later.
+- Purchase returns and partial cancellation after receipt are not implemented yet.
 - No channel integrations yet; `Channel`/sync tables are P5.
 
 ## Security

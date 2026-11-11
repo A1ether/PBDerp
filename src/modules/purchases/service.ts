@@ -156,7 +156,20 @@ export async function cancelPurchaseOrder(id: string, ctx: ActorContext) {
   );
 }
 
+export type ReceiveLineInput = {
+  lineId: string;
+  quantity: string;
+};
+
 export async function receivePurchaseOrder(id: string, ctx: ActorContext) {
+  return receivePurchaseOrderWithLines(id, [], ctx);
+}
+
+export async function receivePurchaseOrderWithLines(
+  id: string,
+  requestedLines: ReceiveLineInput[],
+  ctx: ActorContext,
+) {
   return prisma.$transaction(async (tx) => {
     const locked = await lockOrder(tx, id, ctx.organizationId);
     if (!["APPROVED", "ORDERED", "PARTIALLY_RECEIVED"].includes(locked.status)) {
@@ -168,6 +181,23 @@ export async function receivePurchaseOrder(id: string, ctx: ActorContext) {
       include: { lines: true },
     });
     if (!order) throw new AppError("NOT_FOUND", "采购订单不存在。");
+
+    const requested =
+      requestedLines.length > 0
+        ? requestedLines
+        : order.lines
+            .map((line) => ({
+              lineId: line.id,
+              quantity: line.quantity.minus(line.receivedQuantity).toString(),
+            }))
+            .filter((line) => Number(line.quantity) > 0);
+
+    if (requested.length === 0) {
+      throw new AppError("VALIDATION_ERROR", "没有可收货的数量。");
+    }
+    if (new Set(requested.map((line) => line.lineId)).size !== requested.length) {
+      throw new AppError("VALIDATION_ERROR", "同一商品行不能重复收货。");
+    }
 
     const location = await getDefaultLocation(tx, order.warehouseId);
     const receiptNo = await nextDocumentNo(tx, ctx.organizationId, "GOODS_RECEIPT");
@@ -182,9 +212,24 @@ export async function receivePurchaseOrder(id: string, ctx: ActorContext) {
       },
     });
 
-    for (const line of order.lines) {
+    const lineMap = new Map(order.lines.map((line) => [line.id, line]));
+
+    for (const request of requested) {
+      const line = lineMap.get(request.lineId);
+      if (!line) throw new AppError("VALIDATION_ERROR", "采购订单行不存在。");
+
+      const receiveQty = dec(request.quantity);
+      if (!receiveQty.isPositive()) {
+        throw new AppError("VALIDATION_ERROR", "收货数量必须大于 0。");
+      }
       const remaining = line.quantity.minus(line.receivedQuantity);
-      if (remaining.lte(0)) continue;
+      if (receiveQty.gt(remaining)) {
+        throw new AppError(
+          "VALIDATION_ERROR",
+          `SKU ${line.skuSnapshot} 收货数量超过剩余数量（剩余 ${remaining.toString()}）。`,
+        );
+      }
+
       const level = await lockStockLevel(tx, {
         organizationId: ctx.organizationId,
         warehouseId: order.warehouseId,
@@ -192,12 +237,12 @@ export async function receivePurchaseOrder(id: string, ctx: ActorContext) {
         variantId: line.variantId,
       });
 
-      const nextQuantity = level.quantity.plus(remaining);
+      const nextQuantity = level.quantity.plus(receiveQty);
       await tx.stockLevel.update({ where: { id: level.id }, data: { quantity: nextQuantity } });
 
       await tx.purchaseOrderLine.update({
         where: { id: line.id },
-        data: { receivedQuantity: line.receivedQuantity.plus(remaining) },
+        data: { receivedQuantity: line.receivedQuantity.plus(receiveQty) },
       });
 
       await tx.goodsReceiptLine.create({
@@ -206,7 +251,7 @@ export async function receivePurchaseOrder(id: string, ctx: ActorContext) {
           receiptId: receipt.id,
           orderLineId: line.id,
           variantId: line.variantId,
-          quantity: remaining,
+          quantity: receiveQty,
           unitCost: line.unitCost,
         },
       });
@@ -217,7 +262,7 @@ export async function receivePurchaseOrder(id: string, ctx: ActorContext) {
         locationId: location.id,
         variantId: line.variantId,
         type: "PURCHASE_RECEIPT",
-        quantity: remaining,
+        quantity: receiveQty,
         unitCost: line.unitCost,
         balanceAfter: nextQuantity,
         referenceType: "PURCHASE_ORDER",
@@ -227,7 +272,6 @@ export async function receivePurchaseOrder(id: string, ctx: ActorContext) {
       });
     }
 
-    // Re-check from persisted lines: a mixed receipt could leave some lines short.
     const refreshed = await tx.purchaseOrderLine.findMany({ where: { orderId: order.id } });
     const fullyReceived = refreshed.every((line) => line.receivedQuantity.gte(line.quantity));
 
@@ -246,7 +290,7 @@ export async function receivePurchaseOrder(id: string, ctx: ActorContext) {
       entityType: "PurchaseOrder",
       entityId: order.id,
       before: auditJson({ status: order.status }),
-      after: auditJson({ status: updated.status, receiptNo }),
+      after: auditJson({ status: updated.status, receiptNo, lines: requested.length }),
     });
 
     return updated;

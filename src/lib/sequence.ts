@@ -10,6 +10,8 @@ const PREFIX: Record<DocumentType, string> = {
   SHIPMENT: "SHP",
   GOODS_RECEIPT: "GRN",
   STOCK_TRANSFER: "TRF",
+  SALES_RETURN: "SR",
+  STOCK_TAKE: "ST",
 };
 
 type QueryClient = Pick<Prisma.TransactionClient, "$queryRaw">;

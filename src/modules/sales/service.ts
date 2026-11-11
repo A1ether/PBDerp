@@ -182,11 +182,24 @@ export async function confirmSalesOrder(id: string, ctx: ActorContext) {
   });
 }
 
+export type ShipLineInput = {
+  lineId: string;
+  quantity: string;
+};
+
 export async function shipSalesOrder(id: string, ctx: ActorContext) {
+  return shipSalesOrderWithLines(id, [], ctx);
+}
+
+export async function shipSalesOrderWithLines(
+  id: string,
+  requestedLines: ShipLineInput[],
+  ctx: ActorContext,
+) {
   return prisma.$transaction(async (tx) => {
     const locked = await lockOrder(tx, id, ctx.organizationId);
-    if (locked.status !== "CONFIRMED") {
-      throw new AppError("INVALID_STATE", "只有已确认订单可以出库。");
+    if (locked.status !== "CONFIRMED" && locked.status !== "PARTIALLY_SHIPPED") {
+      throw new AppError("INVALID_STATE", "只有已确认或部分出库的订单可以出库。");
     }
 
     const order = await tx.salesOrder.findFirst({
@@ -196,6 +209,23 @@ export async function shipSalesOrder(id: string, ctx: ActorContext) {
       },
     });
     if (!order) throw new AppError("NOT_FOUND", "销售订单不存在。");
+
+    const requested =
+      requestedLines.length > 0
+        ? requestedLines
+        : order.lines
+            .map((line) => ({
+              lineId: line.id,
+              quantity: line.quantity.minus(line.shippedQuantity).toString(),
+            }))
+            .filter((line) => Number(line.quantity) > 0);
+
+    if (requested.length === 0) {
+      throw new AppError("VALIDATION_ERROR", "没有可出库的数量。");
+    }
+    if (new Set(requested.map((line) => line.lineId)).size !== requested.length) {
+      throw new AppError("VALIDATION_ERROR", "同一商品行不能重复出库。");
+    }
 
     const shipmentNo = await nextDocumentNo(tx, ctx.organizationId, "SHIPMENT");
     const shipment = await tx.shipment.create({
@@ -209,13 +239,31 @@ export async function shipSalesOrder(id: string, ctx: ActorContext) {
       },
     });
 
-    for (const line of order.lines) {
+    const lineMap = new Map(order.lines.map((line) => [line.id, line]));
+
+    for (const request of requested) {
+      const line = lineMap.get(request.lineId);
+      if (!line) throw new AppError("VALIDATION_ERROR", "订单行不存在。");
+
+      const shipQty = dec(request.quantity);
+      if (!shipQty.isPositive()) {
+        throw new AppError("VALIDATION_ERROR", "出库数量必须大于 0。");
+      }
+
       const remaining = line.quantity.minus(line.shippedQuantity);
-      if (remaining.lte(0)) continue;
+      if (shipQty.gt(remaining)) {
+        throw new AppError(
+          "VALIDATION_ERROR",
+          `SKU ${line.skuSnapshot} 出库数量超过剩余数量（剩余 ${remaining.toString()}）。`,
+        );
+      }
 
       const reservation = line.reservations[0];
       if (!reservation) {
         throw new AppError("RESERVATION_MISMATCH", `SKU ${line.skuSnapshot} 缺少有效预留，无法出库。`);
+      }
+      if (reservation.quantity.lt(shipQty)) {
+        throw new AppError("RESERVATION_MISMATCH", `SKU ${line.skuSnapshot} 预留数量不足。`);
       }
 
       const level = await lockStockLevel(tx, {
@@ -225,29 +273,36 @@ export async function shipSalesOrder(id: string, ctx: ActorContext) {
         variantId: line.variantId,
       });
 
-      if (level.reservedQuantity.lt(remaining)) {
-        throw new AppError("RESERVATION_MISMATCH", `SKU ${line.skuSnapshot} 预留数量异常，请取消订单后重新确认。`);
+      if (level.reservedQuantity.lt(shipQty)) {
+        throw new AppError("RESERVATION_MISMATCH", `SKU ${line.skuSnapshot} 预留数量异常，请检查库存。`);
       }
-      if (level.quantity.lt(remaining)) {
+      if (level.quantity.lt(shipQty)) {
         throw new AppError("INSUFFICIENT_STOCK", `SKU ${line.skuSnapshot} 实物库存不足，无法出库。`);
       }
 
-      const nextQuantity = level.quantity.minus(remaining);
-      const nextReserved = level.reservedQuantity.minus(remaining);
+      const nextQuantity = level.quantity.minus(shipQty);
+      const nextReserved = level.reservedQuantity.minus(shipQty);
 
       await tx.stockLevel.update({
         where: { id: level.id },
         data: { quantity: nextQuantity, reservedQuantity: nextReserved },
       });
 
-      await tx.stockReservation.update({
-        where: { id: reservation.id },
-        data: { status: "CONSUMED" },
-      });
+      if (reservation.quantity.eq(shipQty)) {
+        await tx.stockReservation.update({
+          where: { id: reservation.id },
+          data: { status: "CONSUMED" },
+        });
+      } else {
+        await tx.stockReservation.update({
+          where: { id: reservation.id },
+          data: { quantity: reservation.quantity.minus(shipQty) },
+        });
+      }
 
       await tx.salesOrderLine.update({
         where: { id: line.id },
-        data: { shippedQuantity: line.shippedQuantity.plus(remaining) },
+        data: { shippedQuantity: line.shippedQuantity.plus(shipQty) },
       });
 
       await tx.shipmentLine.create({
@@ -256,7 +311,7 @@ export async function shipSalesOrder(id: string, ctx: ActorContext) {
           shipmentId: shipment.id,
           orderLineId: line.id,
           variantId: line.variantId,
-          quantity: remaining,
+          quantity: shipQty,
         },
       });
 
@@ -266,7 +321,7 @@ export async function shipSalesOrder(id: string, ctx: ActorContext) {
         locationId: reservation.locationId,
         variantId: line.variantId,
         type: "SALES_SHIPMENT",
-        quantity: remaining.negated(),
+        quantity: shipQty.negated(),
         unitCost: 0,
         balanceAfter: nextQuantity,
         referenceType: "SALES_ORDER",
@@ -276,9 +331,13 @@ export async function shipSalesOrder(id: string, ctx: ActorContext) {
       });
     }
 
+    const refreshed = await tx.salesOrderLine.findMany({ where: { orderId: order.id } });
+    const fullyShipped = refreshed.every((line) => line.shippedQuantity.gte(line.quantity));
+    const nextStatus = fullyShipped ? "SHIPPED" : "PARTIALLY_SHIPPED";
+
     const updated = await tx.salesOrder.update({
       where: { id: order.id },
-      data: { status: "SHIPPED", shippedAt: new Date() },
+      data: { status: nextStatus, shippedAt: new Date() },
     });
 
     await writeAudit(tx, {
@@ -288,7 +347,7 @@ export async function shipSalesOrder(id: string, ctx: ActorContext) {
       entityType: "SalesOrder",
       entityId: order.id,
       before: auditJson({ status: order.status }),
-      after: auditJson({ status: updated.status, shipmentNo }),
+      after: auditJson({ status: updated.status, shipmentNo, lines: requested.length }),
     });
 
     return updated;

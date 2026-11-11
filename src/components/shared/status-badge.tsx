@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 const TONES: Record<string, string> = {
   ACTIVE: "border-emerald-200 bg-emerald-50 text-emerald-700",
   CONFIRMED: "border-blue-200 bg-blue-50 text-blue-700",
+  PARTIALLY_SHIPPED: "border-amber-200 bg-amber-50 text-amber-700",
   SHIPPED: "border-indigo-200 bg-indigo-50 text-indigo-700",
   COMPLETED: "border-emerald-200 bg-emerald-50 text-emerald-700",
   APPROVED: "border-blue-200 bg-blue-50 text-blue-700",
@@ -28,6 +29,7 @@ const LABELS: Record<string, string> = {
   ARCHIVED: "已归档",
   DRAFT: "草稿",
   CONFIRMED: "已确认",
+  PARTIALLY_SHIPPED: "部分出库",
   SHIPPED: "已出库",
   COMPLETED: "已完成",
   CANCELLED: "已取消",

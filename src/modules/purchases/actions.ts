@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
-import { toActionError, type ActionState } from "@/lib/errors";
+import { AppError, toActionError, type ActionState } from "@/lib/errors";
 import { requirePermission } from "@/lib/session";
 import {
   createPurchaseOrderSchema,
@@ -17,6 +17,7 @@ import {
   createPurchaseOrder,
   markPurchaseOrderOrdered,
   receivePurchaseOrder,
+  receivePurchaseOrderWithLines,
   recordSupplierPayment,
 } from "@/modules/purchases/service";
 
@@ -119,6 +120,44 @@ export async function recordSupplierPaymentAction(_state: ActionState, formData:
     if (!parsed.success) return validationError(parsed.error);
     id = parsed.data.id;
     await recordSupplierPayment(parsed.data, { organizationId, actorId: user.id });
+  } catch (error) {
+    return toActionError(error);
+  }
+  revalidateOrder(id);
+  redirect(`/purchases/${id}`);
+}
+const receiveQuantitySchema = z.object({
+  lineId: z.string().min(1),
+  quantity: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,4})?$/, "收货数量格式不正确")
+    .refine((value) => Number(value) > 0, "收货数量必须大于 0"),
+});
+
+function parseReceiveLines(formData: FormData) {
+  const lines: Array<{ lineId: string; quantity: string }> = [];
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith("qty_")) continue;
+    const quantity = String(value).trim();
+    if (!quantity || Number(quantity) === 0) continue;
+    lines.push({ lineId: key.slice(4), quantity });
+  }
+  const parsed = z.array(receiveQuantitySchema).min(1, "请填写至少一行收货数量").safeParse(lines);
+  if (!parsed.success) {
+    throw new AppError("VALIDATION_ERROR", parsed.error.issues[0]?.message ?? "收货数量格式不正确");
+  }
+  return parsed.data;
+}
+
+export async function receivePurchaseOrderPartialAction(_state: ActionState, formData: FormData): Promise<ActionState> {
+  let id = "";
+  try {
+    const { organizationId, user } = await requirePermission("purchase.receive");
+    id = String(formData.get("id") ?? "");
+    if (!id) throw new AppError("VALIDATION_ERROR", "采购订单不存在。");
+    const lines = parseReceiveLines(formData);
+    await receivePurchaseOrderWithLines(id, lines, { organizationId, actorId: user.id });
   } catch (error) {
     return toActionError(error);
   }

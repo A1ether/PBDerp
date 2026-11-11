@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeftRight, ClipboardList, Plus } from "lucide-react";
+import { ArrowLeftRight, ClipboardCheck, ClipboardList, Plus } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
@@ -49,6 +49,10 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
             <Link href="/inventory/movements" className={buttonVariants({ variant: "outline" })}>
               <ClipboardList className="size-4" />
               库存流水
+            </Link>
+            <Link href="/inventory/stocktake" className={buttonVariants({ variant: "outline" })}>
+              <ClipboardCheck className="size-4" />
+              盘点
             </Link>
             {canTransfer ? (
               <Link href="/inventory/transfer" className={buttonVariants({ variant: "outline" })}>

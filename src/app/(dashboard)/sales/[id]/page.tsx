@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ActionButtonForm } from "@/components/shared/action-button-form";
@@ -6,6 +7,7 @@ import { NativeSelect, TextAreaField, TextField } from "@/components/shared/form
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { buttonVariants } from "@/lib/button-variants";
 import {
   Table,
   TableBody,
@@ -22,7 +24,6 @@ import {
   completeSalesOrderAction,
   confirmSalesOrderAction,
   recordSalesPaymentAction,
-  shipSalesOrderAction,
 } from "@/modules/sales/actions";
 import { getSalesOrder } from "@/modules/sales/queries";
 
@@ -55,16 +56,18 @@ export default async function SalesOrderDetailPage({ params }: { params: Promise
                 confirmMessage="确认后会按可用库存预留商品，是否继续？"
               />
             ) : null}
-            {canShip && order.status === "CONFIRMED" ? (
-              <ActionButtonForm
-                action={shipSalesOrderAction}
-                fields={{ id: order.id }}
-                label="出库"
-                confirmMessage="出库会扣减实物库存并生成发货单，是否继续？"
-              />
+            {canShip && (order.status === "CONFIRMED" || order.status === "PARTIALLY_SHIPPED") ? (
+              <Link href={`/sales/${order.id}/ship`} className={buttonVariants()}>
+                出库
+              </Link>
             ) : null}
             {canWrite && order.status === "SHIPPED" ? (
               <ActionButtonForm action={completeSalesOrderAction} fields={{ id: order.id }} label="完成订单" variant="outline" />
+            ) : null}
+            {canWrite && ["SHIPPED", "COMPLETED", "PARTIALLY_SHIPPED"].includes(order.status) ? (
+              <Link href={`/sales/${order.id}/return`} className={buttonVariants({ variant: "outline" })}>
+                创建退货
+              </Link>
             ) : null}
             {canWrite && (order.status === "DRAFT" || order.status === "CONFIRMED") ? (
               <ActionButtonForm

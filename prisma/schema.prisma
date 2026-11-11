@@ -38,6 +38,7 @@ enum ProductStatus {
 enum SalesOrderStatus {
   DRAFT
   CONFIRMED
+  PARTIALLY_SHIPPED
   SHIPPED
   COMPLETED
   CANCELLED
@@ -94,6 +95,7 @@ enum PaymentMethod {
 enum PaymentReferenceType {
   SALES_ORDER
   PURCHASE_ORDER
+  SALES_RETURN
 }
 
 enum TransferStatus {
@@ -108,6 +110,20 @@ enum DocumentType {
   SHIPMENT
   GOODS_RECEIPT
   STOCK_TRANSFER
+  SALES_RETURN
+  STOCK_TAKE
+}
+
+enum SalesReturnStatus {
+  DRAFT
+  RECEIVED
+  CANCELLED
+}
+
+enum StockTakeStatus {
+  DRAFT
+  COMPLETED
+  CANCELLED
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +158,8 @@ model User {
   accounts              Account[]
   createdSalesOrders    SalesOrder[]    @relation("SalesOrderCreatedBy")
   createdPurchaseOrders PurchaseOrder[] @relation("PurchaseOrderCreatedBy")
+  createdReturns        SalesReturn[]   @relation("SalesReturnCreatedBy")
+  createdStockTakes     StockTake[]     @relation("StockTakeCreatedBy")
   stockMovements        StockMovement[] @relation("StockMovementCreatedBy")
   stockTransfers        StockTransfer[] @relation("StockTransferCreatedBy")
   payments              Payment[]       @relation("PaymentCreatedBy")
@@ -298,6 +316,8 @@ model ProductVariant {
   shipmentLines      ShipmentLine[]
   goodsReceiptLines  GoodsReceiptLine[]
   stockTransferLines StockTransferLine[]
+  returnLines        SalesReturnLine[]
+  stockTakeLines     StockTakeLine[]
 
   @@unique([organizationId, sku])
   @@unique([organizationId, barcode])
@@ -319,6 +339,8 @@ model Warehouse {
   stockLevels    StockLevel[]
   stockMovements StockMovement[]
   reservations   StockReservation[]
+  salesReturns   SalesReturn[]
+  stockTakes     StockTake[]
   salesOrders    SalesOrder[]
   purchaseOrders PurchaseOrder[]
   shipments      Shipment[]
@@ -343,6 +365,7 @@ model WarehouseLocation {
   stockLevels    StockLevel[]
   stockMovements StockMovement[]
   reservations   StockReservation[]
+  stockTakeLines StockTakeLine[]
 
   @@unique([warehouseId, code])
 }
@@ -523,6 +546,7 @@ model SalesOrder {
 
   lines     SalesOrderLine[]
   shipments Shipment[]
+  returns   SalesReturn[]
 
   @@unique([organizationId, orderNo])
   @@index([organizationId, status, createdAt])
@@ -530,23 +554,25 @@ model SalesOrder {
 }
 
 model SalesOrderLine {
-  id              String         @id @default(cuid())
-  organizationId  String
-  orderId         String
-  order           SalesOrder     @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  variantId       String
-  variant         ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
-  skuSnapshot     String
-  nameSnapshot    String
-  quantity        Decimal        @db.Decimal(18, 4)
-  unitPrice       Decimal        @db.Decimal(18, 4)
-  discount        Decimal        @default(0) @db.Decimal(18, 2)
-  taxRate         Decimal        @default(0) @db.Decimal(8, 4)
-  lineTotal       Decimal        @db.Decimal(18, 2)
-  shippedQuantity Decimal        @default(0) @db.Decimal(18, 4)
+  id               String         @id @default(cuid())
+  organizationId   String
+  orderId          String
+  order            SalesOrder     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId        String
+  variant          ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  skuSnapshot      String
+  nameSnapshot     String
+  quantity         Decimal        @db.Decimal(18, 4)
+  unitPrice        Decimal        @db.Decimal(18, 4)
+  discount         Decimal        @default(0) @db.Decimal(18, 2)
+  taxRate          Decimal        @default(0) @db.Decimal(8, 4)
+  lineTotal        Decimal        @db.Decimal(18, 2)
+  shippedQuantity  Decimal        @default(0) @db.Decimal(18, 4)
+  returnedQuantity Decimal        @default(0) @db.Decimal(18, 4)
 
   reservations  StockReservation[]
   shipmentLines ShipmentLine[]
+  returnLines   SalesReturnLine[]
 
   @@index([orderId])
   @@index([variantId])
@@ -678,6 +704,93 @@ model GoodsReceiptLine {
   unitCost       Decimal           @db.Decimal(18, 4)
 
   @@index([receiptId])
+}
+
+// ---------------------------------------------------------------------------
+// Sales returns
+// ---------------------------------------------------------------------------
+
+model SalesReturn {
+  id             String            @id @default(cuid())
+  organizationId String
+  returnNo       String
+  orderId        String
+  order          SalesOrder        @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  warehouseId    String
+  warehouse      Warehouse         @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  status         SalesReturnStatus @default(DRAFT)
+  reason         String?
+  refundAmount   Decimal           @default(0) @db.Decimal(18, 2)
+  receivedAt     DateTime?
+  createdById    String?
+  createdBy      User?             @relation("SalesReturnCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  lines SalesReturnLine[]
+
+  @@unique([organizationId, returnNo])
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, orderId])
+}
+
+model SalesReturnLine {
+  id             String         @id @default(cuid())
+  organizationId String
+  returnId       String
+  return         SalesReturn    @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  orderLineId    String
+  orderLine      SalesOrderLine @relation(fields: [orderLineId], references: [id], onDelete: Restrict)
+  variantId      String
+  variant        ProductVariant @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  quantity       Decimal        @db.Decimal(18, 4)
+  unitPrice      Decimal        @db.Decimal(18, 4)
+  lineTotal      Decimal        @db.Decimal(18, 2)
+
+  @@index([returnId])
+  @@index([orderLineId])
+}
+
+// ---------------------------------------------------------------------------
+// Stock takes
+// ---------------------------------------------------------------------------
+
+model StockTake {
+  id             String          @id @default(cuid())
+  organizationId String
+  takeNo         String
+  warehouseId    String
+  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  status         StockTakeStatus @default(DRAFT)
+  note           String?
+  completedAt    DateTime?
+  createdById    String?
+  createdBy      User?           @relation("StockTakeCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  lines StockTakeLine[]
+
+  @@unique([organizationId, takeNo])
+  @@index([organizationId, status, createdAt])
+  @@index([organizationId, warehouseId])
+}
+
+model StockTakeLine {
+  id              String            @id @default(cuid())
+  organizationId  String
+  stockTakeId     String
+  stockTake       StockTake         @relation(fields: [stockTakeId], references: [id], onDelete: Cascade)
+  variantId       String
+  variant         ProductVariant    @relation(fields: [variantId], references: [id], onDelete: Restrict)
+  locationId      String
+  location        WarehouseLocation @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  systemQuantity  Decimal           @db.Decimal(18, 4)
+  countedQuantity Decimal           @db.Decimal(18, 4)
+  difference      Decimal           @db.Decimal(18, 4)
+
+  @@index([stockTakeId])
+  @@index([variantId])
 }
 
 // ---------------------------------------------------------------------------

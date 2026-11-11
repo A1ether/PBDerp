@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ActionButtonForm } from "@/components/shared/action-button-form";
@@ -6,6 +7,7 @@ import { NativeSelect, TextAreaField, TextField } from "@/components/shared/form
 import { PageHeader } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { buttonVariants } from "@/lib/button-variants";
 import {
   Table,
   TableBody,
@@ -21,7 +23,6 @@ import {
   approvePurchaseOrderAction,
   cancelPurchaseOrderAction,
   markPurchaseOrderOrderedAction,
-  receivePurchaseOrderAction,
   recordSupplierPaymentAction,
 } from "@/modules/purchases/actions";
 import { getPurchaseOrder } from "@/modules/purchases/queries";
@@ -54,12 +55,9 @@ export default async function PurchaseOrderDetailPage({ params }: { params: Prom
               <ActionButtonForm action={markPurchaseOrderOrderedAction} fields={{ id: order.id }} label="标记已下单" variant="outline" />
             ) : null}
             {canReceive && ["APPROVED", "ORDERED", "PARTIALLY_RECEIVED"].includes(order.status) ? (
-              <ActionButtonForm
-                action={receivePurchaseOrderAction}
-                fields={{ id: order.id }}
-                label="收货入库"
-                confirmMessage="收货会把剩余数量全部入库，并写入库存流水，是否继续？"
-              />
+              <Link href={`/purchases/${order.id}/receive`} className={buttonVariants()}>
+                收货入库
+              </Link>
             ) : null}
             {canWrite && ["DRAFT", "APPROVED", "ORDERED"].includes(order.status) ? (
               <ActionButtonForm

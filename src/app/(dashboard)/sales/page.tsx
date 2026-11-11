@@ -27,6 +27,7 @@ export const metadata = { title: "销售订单" };
 const STATUSES: { value: SalesOrderStatus; label: string }[] = [
   { value: "DRAFT", label: "草稿" },
   { value: "CONFIRMED", label: "已确认" },
+  { value: "PARTIALLY_SHIPPED", label: "部分出库" },
   { value: "SHIPPED", label: "已出库" },
   { value: "COMPLETED", label: "已完成" },
   { value: "CANCELLED", label: "已取消" },
