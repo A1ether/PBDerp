@@ -42,6 +42,7 @@ If `pnpm` is intercepted by a broken mise shim, use the local binaries:
 - **Money/quantity use Decimal** (`src/lib/money.ts`). Never use `number` for money arithmetic. Prisma columns are `numeric`.
 - **Audit every mutation** inside the same transaction (`writeAudit`).
 - **Document numbers** via `nextDocumentNo(tx, organizationId, type)` inside the transaction. Do not use `Date.now()`.
+- **Channel imports** go through `src/modules/channels/service.ts`: CSV parsing is in `adapter.ts`, imported orders become DRAFT sales orders, and `ChannelOrder` is the idempotency key (`channelId + externalOrderNo`).
 
 ## Permissions
 
@@ -49,6 +50,7 @@ If `pnpm` is intercepted by a broken mise shim, use the local binaries:
 - Pages call `requirePermission("products.read")` etc.
 - Actions call `requirePermission("...write")`; status transitions use the specific permission (`sales.ship`, `purchase.receive`).
 - Roles: `ADMIN`, `MANAGER`, `SALES`, `PURCHASER`, `WAREHOUSE`, `FINANCE`, `VIEWER`.
+- Channel import uses `channels.write`; channel viewing uses `channels.read`.
 
 ## UI conventions
 
@@ -88,7 +90,8 @@ If `pnpm` is intercepted by a broken mise shim, use the local binaries:
 - Single organization per deployment (tenant fields are present, org switching is not built).
 - Inventory list low-stock filter fetches a bounded window (2,000 rows) and filters in memory; optimize with SQL later.
 - Purchase returns and partial cancellation after receipt are not implemented yet.
-- No channel integrations yet; `Channel`/sync tables are P5.
+- Channel integration currently supports CSV import only; platform API adapters and background sync are pending.
+- CSV import creates DRAFT sales orders; it does not confirm/reserve stock automatically.
 
 ## Security
 

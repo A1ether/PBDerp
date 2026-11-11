@@ -19,6 +19,8 @@ export const PERMISSIONS = [
   "purchase.receive",
   "finance.read",
   "finance.write",
+  "channels.read",
+  "channels.write",
   "settings.read",
   "settings.write",
   "audit.read",
@@ -35,6 +37,7 @@ const READ_ONLY: Permission[] = [
   "sales.read",
   "purchase.read",
   "finance.read",
+  "channels.read",
   "settings.read",
 ];
 
@@ -48,6 +51,7 @@ const ROLE_PERMISSIONS: Record<AppRole, ReadonlySet<Permission>> = {
     "partners.write",
     "sales.read",
     "sales.write",
+    "channels.read",
     "finance.read",
   ]),
   PURCHASER: new Set([
@@ -57,6 +61,7 @@ const ROLE_PERMISSIONS: Record<AppRole, ReadonlySet<Permission>> = {
     "partners.write",
     "purchase.read",
     "purchase.write",
+    "channels.read",
     "finance.read",
   ]),
   WAREHOUSE: new Set([

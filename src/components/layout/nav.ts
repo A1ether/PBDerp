@@ -5,6 +5,7 @@ import {
   Boxes,
   LayoutDashboard,
   Package,
+  Plug,
   RotateCcw,
   Settings,
   ShoppingCart,
@@ -53,6 +54,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { href: "/purchases", label: "采购订单", icon: Truck, permission: "purchase.read" },
       { href: "/partners", label: "客户与供应商", icon: Users, permission: "partners.read" },
       { href: "/finance", label: "收付款", icon: Wallet, permission: "finance.read" },
+      { href: "/channels", label: "渠道", icon: Plug, permission: "channels.read" },
     ],
   },
   {
@@ -83,6 +85,7 @@ export const PAGE_LABELS: Record<string, string> = {
   "/purchases/new": "新建采购订单",
   "/partners": "客户与供应商",
   "/finance": "收付款",
+  "/channels": "渠道",
   "/settings": "设置",
   "/settings/users": "用户",
   "/settings/audit": "审计日志",

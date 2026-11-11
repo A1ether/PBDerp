@@ -126,6 +126,20 @@ enum StockTakeStatus {
   CANCELLED
 }
 
+enum ChannelType {
+  CUSTOM
+  SHOPIFY
+  TIKTOK_SHOP
+  TAOBAO
+  JD
+  DOUYIN
+}
+
+enum ChannelOrderStatus {
+  IMPORTED
+  FAILED
+}
+
 // ---------------------------------------------------------------------------
 // Organization & auth (better-auth core tables)
 // ---------------------------------------------------------------------------
@@ -544,9 +558,10 @@ model SalesOrder {
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
 
-  lines     SalesOrderLine[]
-  shipments Shipment[]
-  returns   SalesReturn[]
+  lines         SalesOrderLine[]
+  shipments     Shipment[]
+  returns       SalesReturn[]
+  channelOrders ChannelOrder[]
 
   @@unique([organizationId, orderNo])
   @@index([organizationId, status, createdAt])
@@ -814,6 +829,48 @@ model Payment {
 
   @@index([organizationId, referenceType, referenceId])
   @@index([organizationId, paidAt])
+}
+
+// ---------------------------------------------------------------------------
+// Channels
+// ---------------------------------------------------------------------------
+
+model Channel {
+  id             String       @id @default(cuid())
+  organizationId String
+  type           ChannelType  @default(CUSTOM)
+  name           String
+  code           String
+  config         Json?
+  status         ActiveStatus @default(ACTIVE)
+  lastSyncAt     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  orders ChannelOrder[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+}
+
+model ChannelOrder {
+  id              String             @id @default(cuid())
+  organizationId  String
+  channelId       String
+  channel         Channel            @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  externalOrderNo String
+  salesOrderId    String?
+  salesOrder      SalesOrder?        @relation(fields: [salesOrderId], references: [id], onDelete: SetNull)
+  rawPayload      Json?
+  status          ChannelOrderStatus @default(IMPORTED)
+  errorMessage    String?
+  importedAt      DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@unique([channelId, externalOrderNo])
+  @@index([organizationId, status])
+  @@index([organizationId, salesOrderId])
 }
 
 // ---------------------------------------------------------------------------

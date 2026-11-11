@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus } from "lucide-react";
+import { Download, Plus } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
@@ -47,7 +47,14 @@ export default async function SalesPage({ searchParams }: { searchParams: Promis
       <PageHeader
         title="销售订单"
         description="确认订单会预留库存；出库后扣减实物库存并生成发货单。"
-        actions={canWrite ? <Link href="/sales/new" className={buttonVariants()}><Plus className="size-4" />新建销售订单</Link> : null}
+        actions={
+          <>
+            <a href="/api/export/sales-orders" className={buttonVariants({ variant: "outline" })}>
+              <Download className="size-4" />导出 CSV
+            </a>
+            {canWrite ? <Link href="/sales/new" className={buttonVariants()}><Plus className="size-4" />新建销售订单</Link> : null}
+          </>
+        }
       />
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

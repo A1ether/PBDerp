@@ -18,6 +18,8 @@
 - **采购订单**：草稿 → 审批 → 下单 → 部分/全部收货；收货单
 - **销售退货**：创建退货单 → 退货入库 → 退款流水；可退数量按已出库 - 已退货计算
 - **库存盘点**：仓库快照 → 实盘录入 → 差异调整流水
+- **渠道接入**：渠道管理 + CSV 订单导入（自动建客户/销售草稿、按外部订单号去重）
+- **CSV 导出**：销售订单明细、库存余额
 - 收付款登记、应收应付、销售趋势/畅销 SKU 报表
 - 用户管理、角色调整、审计日志
 - seed 演示数据：商品、仓库、库存、客户、供应商、草稿订单
@@ -86,6 +88,28 @@ pnpm dev
 本机真实项目目录为 `/Users/a1ether/DevSpace/PBD/pbderp-real`，同级的 `PBDerp` 是指向它的软链接。  
 这样处理是为了规避 Next.js 16.4.5 在旧目录路径上出现的构建期 prerender 缓存缺陷（`/_global-error` 的 `useContext` 空指针）；通过 `PBDerp` 访问、开发、构建均正常。  
 如重建目录，请保持软链接，或直接使用新的目录名重新 `pnpm install` / 迁移数据库。
+
+## 渠道 CSV 导入格式
+
+在「渠道 → 打开渠道 → 订单 CSV 导入」粘贴以下格式（首行表头，列名不区分大小写）：
+
+```csv
+externalOrderNo,customerName,customerPhone,warehouseCode,sku,quantity,unitPrice,taxRate
+EXT-1001,张三,13800000001,WH-001,P-1001-BLK-M,2,129,0
+EXT-1001,张三,13800000001,WH-001,P-1001-WHT-L,1,129,0
+EXT-1002,李四,13800000002,WH-001,P-3001-NAT,3,89,0
+```
+
+- 必填：`externalOrderNo`、`customerName`、`sku`、`quantity`、`unitPrice`
+- 可选：`customerCode`、`customerPhone`、`warehouseCode`、`taxRate`、`orderedAt`、`note`
+- 同一 `externalOrderNo` 的多行合并为一张销售订单；重复导入会跳过
+- `unitPrice` 为 0 时使用 SKU 销售价；客户不存在时自动创建
+- 导入结果是 **DRAFT 销售订单**，仍需在销售订单中确认/出库
+
+导出接口（登录且有对应读权限）：
+
+- `GET /api/export/sales-orders`：销售订单明细 CSV
+- `GET /api/export/inventory`：库存余额 CSV
 
 ## 常用命令
 
@@ -157,8 +181,8 @@ docs/
 
 ## 尚未实现（后续阶段）
 
-- 平台渠道适配（Shopify / TikTok Shop / 淘宝 / 京东 / 抖音）：P5
-- CSV 导入导出、Webhook、pg-boss 后台任务：P5
+- 平台 API 适配器（Shopify / TikTok Shop / 淘宝 / 京东 / 抖音）：CSV 框架已就绪，API 适配器待接入
+- Webhook、pg-boss 后台任务、库存推送：P5 后续
 - 采购退货、收货后取消、批次/序列号：后续
 - 多组织切换、组织级 RLS、计费：P6
 - 完整总账/会计凭证：只做轻财务，不做复式记账

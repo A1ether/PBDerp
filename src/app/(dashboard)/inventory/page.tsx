@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeftRight, ClipboardCheck, ClipboardList, Plus } from "lucide-react";
+import { ArrowLeftRight, ClipboardCheck, ClipboardList, Download, Plus } from "lucide-react";
 
 import { EmptyState } from "@/components/shared/empty-state";
 import { PageHeader } from "@/components/shared/page-header";
@@ -54,6 +54,10 @@ export default async function InventoryPage({ searchParams }: { searchParams: Pr
               <ClipboardCheck className="size-4" />
               盘点
             </Link>
+            <a href="/api/export/inventory" className={buttonVariants({ variant: "outline" })}>
+              <Download className="size-4" />
+              导出 CSV
+            </a>
             {canTransfer ? (
               <Link href="/inventory/transfer" className={buttonVariants({ variant: "outline" })}>
                 <ArrowLeftRight className="size-4" />
